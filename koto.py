@@ -1,20 +1,13 @@
 import discord
+from discord.ext import commands
 import interactions
-from interactions import interactions
 import sqlite3
 import random
 import asyncio
 from collections import defaultdict
 
 # Bot token from Discord Developer Portal
-token = "TOKEN"
-
-# Initialize the interactions client
-bot = interactions.Client(token=token, default_scope="applications.commands")
-
-# Initialize the discord.py client
-discord_client = discord.Client(intents=discord.Intents.default())
-slash = discord.Client(intents=discord.Intents.default())
+bot = interactions.Client(token="MTEyNzI0NjEyMDQ2NTIwMzI5NA.Gp-EVI.idJLY4bvsjnN_eim8SyrQ44k2aZsaIo5QnKjvY", default_scope="applications.commands")
 
 # Initialize SQLite database
 conn = sqlite3.connect('cards.db')
@@ -24,12 +17,115 @@ c.execute('CREATE TABLE IF NOT EXISTS cards (rarity TEXT, group_name TEXT, membe
 ITEMS_PER_PAGE = 10
 RARITIES = ["EVENT", "VERYRARE", "RARE", "UNCOMMON", "COMMON"]  # Order of rarities
 
-# Command to check the inventory
+def generate_inventory_embed(items, current_page, page_count):
+    start_index = (current_page - 1) * ITEMS_PER_PAGE
+    end_index = min(start_index + ITEMS_PER_PAGE, len(items))
+
+    item_list = []
+    for i in range(start_index, end_index):
+        item_list.append(f"{i+1}. {items[i]}")
+
+    if not item_list:
+        item_list.append("No items found.")
+
+    inventory_text = "\n".join(item_list)
+    footer_text = f"Page {current_page}/{page_count}"
+
+    embed = discord.Embed(title="Inventory", description=inventory_text, color=discord.Color.blue())
+    embed.set_footer(text=footer_text)
+
+    return embed
+
 @bot.command(
-    name="inv",
-    description="Check the inventory",
+    name="addcard",
+    description="Adds a new card to the card database",
+    options=[
+        interactions.Option(
+            name="card_code",
+            description="The card code in the format of rarity_group_member",
+            type=interactions.OptionType.STRING,
+            required=True,
+        ),
+    ],
 )
-async def inv(ctx: interactions.CommandContext):
+async def add_card(ctx: interactions.CommandContext, card_code: str):
+    rarity, group, member = card_code.split(".")
+    rarity = rarity.upper()
+    group = group.upper()
+    member = member.upper()
+    insert_card(rarity, group, member)
+    await ctx.send(f"Card {card_code.upper()} added!")
+
+def insert_card(rarity, group, member):
+    c.execute("INSERT INTO cards VALUES (?, ?, ?)", (rarity, group, member))
+    conn.commit()
+    
+
+
+@bot.command(
+    name="drop",
+    description="Drops a random card",
+)
+async def drop(ctx: interactions.CommandContext):
+    c.execute("SELECT * FROM cards")
+    cards = c.fetchall()
+    if cards:
+        card = random.choice(cards)
+        rarity, group, member = card
+        card_code = f"{rarity}.{group}.{member}"
+        await ctx.send(f"You got a {card_code.upper()} card!")
+    else:
+        await ctx.send("There are no cards in the database!")
+
+@bot.command(
+    name="gift",
+    description="Gifts a random card to a user",
+    options=[
+        interactions.Option(
+            name="user",
+            description="The user to gift a card to",
+            type=interactions.OptionType.USER,
+            required=True,
+        ),
+    ],
+)
+async def gift(ctx: interactions.CommandContext, user: discord.User):
+    c.execute("SELECT * FROM cards")
+    cards = c.fetchall()
+    if cards:
+        card = random.choice(cards)
+        rarity, group, member = card
+        card_code = f"{rarity}.{group}.{member}"
+        await ctx.send(f"You gifted a {card_code.upper()} card to {user.name}!")
+    else:
+        await ctx.send("There are no cards in the database!")
+        
+@bot.command(
+    name="donotdothisone",
+    description="Drops all cards from the card database. USE WITH CAUTION",
+    options=[
+        interactions.Option(
+            name="password",
+            description="Your password",
+            type=interactions.OptionType.STRING,
+            required=True,
+        ),
+    ],
+)
+async def reset_db(ctx: interactions.CommandContext, password: str):
+    your_user_id = 868784129372725279  # Replace this with your actual Discord user ID
+    correct_password = "Paok2004"  # Replace this with your desired password
+
+    if ctx.author.id == your_user_id and password == correct_password:
+        c.execute('DELETE FROM cards')
+        conn.commit()
+        await ctx.send("Database has been cleared.")
+    else:
+        await ctx.send("You do not have permission to use this command or the password is incorrect.")
+        
+
+@bot.command(name="inv", description="Check the inventory")
+async def inv(ctx):
     c.execute("SELECT * FROM cards")
     cards = c.fetchall()
     if cards:
@@ -46,49 +142,42 @@ async def inv(ctx: interactions.CommandContext):
             current_page = 1
 
             inventory_text = ""
-            for items in all_items[(current_page - 1) * ITEMS_PER_PAGE: current_page * ITEMS_PER_PAGE]:
+            for items in all_items[(current_page - 1) * ITEMS_PER_PAGE : current_page * ITEMS_PER_PAGE]:
                 inventory_text += "\n".join(items) + "\n"
             footer_text = f"Page {current_page}/{page_count}"
 
-            # Send the inventory message and store the message object
-            message = await ctx.send(f"**Inventory**\n{inventory_text}\n\n{footer_text}")
-
-            # React to the message with emoji names
-            await message.add_reaction("➡️")  # Replace with the actual emoji name
-            await message.add_reaction("⬅️")  # Replace with the actual emoji name
+            inventory_message = await ctx.send(content=f"**Inventory**\n{inventory_text}\n\n{footer_text}")
+            await inventory_message.add_reaction(":backward_arrow:")  # Replace with the actual emoji name
+            await inventory_message.add_reaction(":forward_arrow:")  # Replace with the actual emoji name
 
             def check(reaction, user):
                 return (
                     user == ctx.author
-                    and str(reaction.emoji) in ["➡️", "⬅️"]  # Replace with the actual emoji names
-                    and reaction.message.id == message.id
+                    and str(reaction.emoji) in [":backward_arrow:", ":forward_arrow:"]  # Replace with the actual emoji names
+                    and reaction.message.id == inventory_message.id
                 )
 
             while True:
                 try:
                     reaction, user = await bot.wait_for("reaction_add", timeout=60.0, check=check)
 
-                    if str(reaction.emoji) == "⬅️" and current_page > 1:  # Replace with the actual emoji name
-                        current_page -= 1
-                    elif str(reaction.emoji) == "➡️" and current_page < page_count:  # Replace with the actual emoji name
-                        current_page += 1
-                    else:
-                        continue
+                    if str(reaction.emoji) == ":backward_arrow:":  # Replace with the actual emoji name
+                        if current_page > 1:
+                            current_page -= 1
+                    elif str(reaction.emoji) == ":forward_arrow:":  # Replace with the actual emoji name
+                        if current_page < page_count:
+                            current_page += 1
 
                     inventory_text = ""
-                    for items in all_items[(current_page - 1) * ITEMS_PER_PAGE: current_page * ITEMS_PER_PAGE]:
+                    for items in all_items[(current_page - 1) * ITEMS_PER_PAGE : current_page * ITEMS_PER_PAGE]:
                         inventory_text += "\n".join(items) + "\n"
                     footer_text = f"Page {current_page}/{page_count}"
-
-                    # Edit the inventory message with the updated content
-                    await message.edit(content=f"**Inventory**\n{inventory_text}\n\n{footer_text}")
-                    await reaction.remove(user)
+                    await inventory_message.edit(content=f"**Inventory**\n{inventory_text}\n\n{footer_text}")
+                    await inventory_message.remove_reaction(reaction, user)
                 except asyncio.TimeoutError:
                     break
 
-            # Clear reactions after timeout
-            await message.clear_reactions()
-
+            await inventory_message.clear_reactions()
         else:
             await ctx.send("Inventory is empty!")
     else:
@@ -101,28 +190,14 @@ async def inv(ctx: interactions.CommandContext):
 
 
 
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, interactions.errors.CommandError):
+        await ctx.send(str(error))
 
+@bot.event
+async def on_shutdown():
+    # Close the database connection when the bot is shutting down
+    conn.close()
 
-@discord_client.event
-async def on_ready():
-    print(f"Discord.py Client logged in as {discord_client.user}")
-    await discord_client.change_presence(activity=discord.Game(name="Interactions"))
-
-@discord_client.event
-async def on_raw_reaction_add(payload):
-    if payload.user_id == discord_client.user.id:
-        return
-
-    if payload.channel_id != YOUR_CHANNEL_ID:
-        return
-
-    message = await discord_client.get_channel(payload.channel_id).fetch_message(payload.message_id)
-
-    if payload.emoji.name in ["⬅️", "➡️"]:
-        await discord_client.process_commands(message)
-
-# Start the interactions client
 bot.start()
-
-# Start the discord.py client
-discord_client.run(token)
