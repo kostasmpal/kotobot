@@ -49,16 +49,18 @@ async def inv(ctx: interactions.CommandContext):
             for items in all_items[(current_page - 1) * ITEMS_PER_PAGE: current_page * ITEMS_PER_PAGE]:
                 inventory_text += "\n".join(items) + "\n"
             footer_text = f"Page {current_page}/{page_count}"
+
+            # Send the inventory message and store the message object
             message = await ctx.send(f"**Inventory**\n{inventory_text}\n\n{footer_text}")
 
             # React to the message with emoji names
-            await message.add_reaction(":arrow_backward:")  # Replace with the actual emoji name
-            await message.add_reaction(":arrow_forward:")  # Replace with the actual emoji name
+            await message.add_reaction("➡️")  # Replace with the actual emoji name
+            await message.add_reaction("⬅️")  # Replace with the actual emoji name
 
             def check(reaction, user):
                 return (
                     user == ctx.author
-                    and str(reaction.emoji) in [":arrow_backward:", ":arrow_forward:"]  # Replace with the actual emoji names
+                    and str(reaction.emoji) in ["➡️", "⬅️"]  # Replace with the actual emoji names
                     and reaction.message.id == message.id
                 )
 
@@ -66,9 +68,9 @@ async def inv(ctx: interactions.CommandContext):
                 try:
                     reaction, user = await bot.wait_for("reaction_add", timeout=60.0, check=check)
 
-                    if str(reaction.emoji) == ":arrow_backward:" and current_page > 1:  # Replace with the actual emoji name
+                    if str(reaction.emoji) == "⬅️" and current_page > 1:  # Replace with the actual emoji name
                         current_page -= 1
-                    elif str(reaction.emoji) == ":arrow_forward:" and current_page < page_count:  # Replace with the actual emoji name
+                    elif str(reaction.emoji) == "➡️" and current_page < page_count:  # Replace with the actual emoji name
                         current_page += 1
                     else:
                         continue
@@ -77,6 +79,8 @@ async def inv(ctx: interactions.CommandContext):
                     for items in all_items[(current_page - 1) * ITEMS_PER_PAGE: current_page * ITEMS_PER_PAGE]:
                         inventory_text += "\n".join(items) + "\n"
                     footer_text = f"Page {current_page}/{page_count}"
+
+                    # Edit the inventory message with the updated content
                     await message.edit(content=f"**Inventory**\n{inventory_text}\n\n{footer_text}")
                     await reaction.remove(user)
                 except asyncio.TimeoutError:
@@ -89,6 +93,7 @@ async def inv(ctx: interactions.CommandContext):
             await ctx.send("Inventory is empty!")
     else:
         await ctx.send("Inventory is empty!")
+
 
 
 
